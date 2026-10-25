@@ -7,7 +7,7 @@ const STATE_LABEL = { idle: 'STANDING BY', listening: 'LISTENING', thinking: 'PR
 
 const BUILTIN_TOOLS = [
   { id: 'websearch', label: 'WEB SEARCH' },
-  { id: 'webfetch', label: 'WEB READER' },
+  { id: 'currenttime', label: 'CLOCK' },
   { id: 'screen', label: 'SCREEN VISION' },
 ];
 
@@ -35,16 +35,18 @@ export function mountHud(): void {
   const render = () => {
     document.body.dataset.state = store.state;
     $('state').textContent = STATE_LABEL[store.state];
-    $('link').textContent = store.online ? (store.elevenlabs ? 'LINK ONLINE // VOICE: ELEVENLABS' : 'LINK ONLINE // VOICE: BROWSER') : 'LINK OFFLINE';
+    const brain = store.provider ? ` // BRAIN: ${store.provider.toUpperCase()}` : '';
+    $('link').textContent = store.online ? `LINK ONLINE${brain} // VOICE: ${store.elevenlabs ? 'ELEVENLABS' : 'BROWSER'}` : 'LINK OFFLINE';
     document.querySelector('.link')!.classList.toggle('on', store.online);
     $('notice').textContent = store.notice;
     $('q').textContent = store.question ? `› ${store.question}` : '';
     $('a').textContent = store.answer;
 
-    const active = store.activeTool.toLowerCase();
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const active = norm(store.activeTool);
     const items = [
       ...BUILTIN_TOOLS.map((t) => ({ label: t.label, on: active.includes(t.id) || (t.id === 'screen' && store.screenShared) })),
-      ...store.tools.map((n) => ({ label: `MCP // ${n.toUpperCase()}`, on: active.includes(n.toLowerCase()) })),
+      ...store.tools.map((n) => ({ label: `MCP // ${n.toUpperCase()}`, on: active.includes(norm(n)) })),
     ];
     $('tools').innerHTML = items.map((i) => `<li class="${i.on ? 'on' : ''}">${i.label}</li>`).join('');
 

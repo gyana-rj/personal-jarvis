@@ -2,9 +2,13 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { loadDotEnv } from './env.mjs';
-import { loadMcpServers } from './mcp-config.mjs';
+import { resolveMcpServers } from './mcp-config.mjs';
 import { createTts } from './tts.mjs';
-import { createAgent } from './agent.mjs';
+import { parseDataUrl } from './llm/image.ts';
+import { selectProvider } from './llm/select.ts';
+import { createAssistant } from './llm/assistant.ts';
+import { connectMcpServers } from './llm/mcp-client.ts';
+import { RATE_LIMIT_MESSAGE } from './llm/types.ts';
 
 const HOST = '127.0.0.1';
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -19,6 +23,15 @@ function isLocalRequest(req) {
   } catch {
     return false;
   }
+}
+
+// What Jarvis says when a turn fails. Never includes provider error text (it can echo request details).
+export function errorLine(err) {
+  if (err instanceof Error && err.name === 'RateLimitError') return RATE_LIMIT_MESSAGE;
+  if (err?.status === 401 || err?.status === 403 || (err?.status === 400 && /api key/i.test(err?.message ?? ''))) {
+    return "I can't seem to authenticate with my brain, sir. Please check the API key and restart me.";
+  }
+  return 'My apologies, sir. I seem to have lost my train of thought.';
 }
 
 export function createBridge({ tts, agent, port = 0 }) {
@@ -57,9 +70,9 @@ export function createBridge({ tts, agent, port = 0 }) {
 
   wss.on('connection', (ws) => {
     const send = (msg) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(msg));
-    let sessionId;
+    const history = [];
     let current;
-    send({ type: 'hello', elevenlabs: tts.available, tools: agent.serverNames });
+    send({ type: 'hello', elevenlabs: tts.available, tools: agent.serverNames, provider: agent.provider });
 
     ws.on('message', async (data) => {
       let msg;
@@ -69,10 +82,10 @@ export function createBridge({ tts, agent, port = 0 }) {
       current?.abort();
       const ac = (current = new AbortController());
       try {
-        sessionId = await agent.run({
+        await agent.run({
           text: msg.text,
-          image: msg.image,
-          sessionId,
+          image: parseDataUrl(msg.image),
+          history,
           signal: ac.signal,
           onText: (delta) => send({ type: 'text', delta }),
           onPanel: (panel, payload) => send({ type: 'panel', panel, data: payload }),
@@ -81,8 +94,8 @@ export function createBridge({ tts, agent, port = 0 }) {
         send({ type: 'done' });
       } catch (err) {
         if (!ac.signal.aborted) {
-          console.error('agent error:', err instanceof Error ? err.message : 'unknown');
-          send({ type: 'error', message: 'My apologies, sir. I seem to have lost my train of thought.' });
+          console.error('agent error:', err instanceof Error ? err.name : 'unknown', err?.status ?? '');
+          send({ type: 'error', message: errorLine(err) });
         }
       }
     });
@@ -98,14 +111,31 @@ export function createBridge({ tts, agent, port = 0 }) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   loadDotEnv();
-  const mcpServers = loadMcpServers();
+  const { servers, source } = resolveMcpServers();
+  let provider;
+  try {
+    provider = selectProvider(process.env, { mcpServers: servers });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'ConfigError') {
+      console.error(`\nJARVIS cannot start: ${err.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  // The Claude Agent SDK launches MCP servers itself; every other provider uses the bridge's MCP client.
+  const hub = provider.managesTools ? undefined : await connectMcpServers(servers);
+  const serverNames = hub ? hub.connected : Object.keys(servers);
+  const assistant = createAssistant({ provider, mcpTools: hub?.tools, serverNames });
+  const agent = { run: assistant.run, serverNames, provider: provider.name };
   const tts = createTts({ apiKey: process.env.ELEVENLABS_API_KEY, voiceId: process.env.JARVIS_VOICE_ID });
-  const agent = createAgent({ mcpServers, model: process.env.JARVIS_MODEL });
   const bridge = createBridge({ tts, agent, port: Number(process.env.BRIDGE_PORT ?? 8787) });
   const bound = await bridge.listen();
-  // Names only: the contents of ~/.claude.json are never logged.
+  // Names only: the contents of the MCP config files are never logged.
   console.log(`bridge listening on ${HOST}:${bound}`);
-  console.log(`mcp servers: ${agent.serverNames.join(', ') || 'none'}`);
+  console.log(`llm: ${provider.name} (${provider.model})`);
+  console.log(`mcp servers (${source}): ${serverNames.join(', ') || 'none'}${hub?.failed.length ? `; failed to connect: ${hub.failed.join(', ')}` : ''}`);
   console.log(`elevenlabs: ${tts.available ? 'available' : 'unavailable (browser voice fallback)'}`);
-  if (!process.env.ANTHROPIC_API_KEY) console.warn('ANTHROPIC_API_KEY is not set; the agent will not be able to answer.');
+  const shutdown = () => { void hub?.close().finally(() => process.exit(0)); };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
