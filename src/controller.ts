@@ -1,4 +1,5 @@
 import { BridgeClient, type ServerMsg } from './bridge';
+import { Screen, SCREEN_RE } from './screen';
 import { Stt } from './stt';
 import { Tts } from './tts';
 import { set, store } from './state';
@@ -14,12 +15,10 @@ export class Controller {
     onCancelled: () => { if (store.state === 'listening') set({ state: 'idle' }); },
     onError: (code) => this.onSttError(code),
   });
+  private screen = new Screen();
   private pending = '';
   private streamDone = true;
   private noticeTimer?: number;
-  /** Optional hook so Phase 5 can attach a screen frame to a question. */
-  beforeAsk?: (text: string) => Promise<string | undefined>;
-
   async start(): Promise<void> {
     this.tts.onStart = () => {
       this.stt.pause();
@@ -29,6 +28,10 @@ export class Controller {
       if (!this.streamDone) return void set({ state: 'thinking' });
       set({ state: 'idle' });
       this.stt.resume();
+    };
+    this.screen.onChange = (screenShared) => {
+      set({ screenShared });
+      this.notify(screenShared ? 'Screen sharing on. Ask me what is on your screen.' : 'Screen sharing off.');
     };
     await this.tts.init();
     set({ elevenlabs: this.tts.elevenlabs });
@@ -72,7 +75,13 @@ export class Controller {
     set({ question: text, answer: '', state: 'thinking', activeTool: '' });
     this.streamDone = false;
     let image: string | undefined;
-    try { image = await this.beforeAsk?.(text); } catch { image = undefined; }
+    if (SCREEN_RE.test(text)) {
+      image = this.screen.grab() ?? undefined;
+      if (!image) {
+        return this.say("I shall need your permission to see your screen first, sir. Press S, choose a window, and ask me again.");
+      }
+      set({ activeTool: 'screen' });
+    }
     if (!this.client.ask(text, image)) this.say("I'm afraid I can't reach my bridge, sir. Is it running?");
   }
 
@@ -136,6 +145,8 @@ export class Controller {
         this.stt.pttDown();
       } else if (e.code === 'KeyV' && !e.repeat && !e.metaKey && !e.ctrlKey) {
         this.notify(this.tts.cycleVoice());
+      } else if (e.code === 'KeyS' && !e.repeat && !e.metaKey && !e.ctrlKey) {
+        if (this.screen.active) this.screen.disable(); else void this.screen.enable();
       } else if (e.code === 'Escape') {
         this.interrupt();
         set({ state: 'idle' });
