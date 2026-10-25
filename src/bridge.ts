@@ -1,7 +1,7 @@
 import type { CalendarPanelData } from './state';
 
 export type ServerMsg =
-  | { type: 'hello'; elevenlabs: boolean; tools: string[] }
+  | { type: 'hello'; elevenlabs: boolean; tools: string[]; provider?: string }
   | { type: 'text'; delta: string }
   | { type: 'panel'; panel: string; data: CalendarPanelData }
   | { type: 'tool'; name: string }

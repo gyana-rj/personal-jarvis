@@ -35,7 +35,8 @@ export function mountHud(): void {
   const render = () => {
     document.body.dataset.state = store.state;
     $('state').textContent = STATE_LABEL[store.state];
-    $('link').textContent = store.online ? (store.elevenlabs ? 'LINK ONLINE // VOICE: ELEVENLABS' : 'LINK ONLINE // VOICE: BROWSER') : 'LINK OFFLINE';
+    const brain = store.provider ? ` // BRAIN: ${store.provider.toUpperCase()}` : '';
+    $('link').textContent = store.online ? `LINK ONLINE${brain} // VOICE: ${store.elevenlabs ? 'ELEVENLABS' : 'BROWSER'}` : 'LINK OFFLINE';
     document.querySelector('.link')!.classList.toggle('on', store.online);
     $('notice').textContent = store.notice;
     $('q').textContent = store.question ? `› ${store.question}` : '';
