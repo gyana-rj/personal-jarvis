@@ -1,4 +1,4 @@
-const MAX_EDGE = 1568; // Claude vision downsizes beyond this anyway
+const MAX_EDGE = 1568; // larger frames are downscaled by the model anyway; keep uploads small
 
 /**
  * Screen Capture API. getDisplayMedia needs a user gesture, so the person grants it once

@@ -7,7 +7,7 @@ const STATE_LABEL = { idle: 'STANDING BY', listening: 'LISTENING', thinking: 'PR
 
 const BUILTIN_TOOLS = [
   { id: 'websearch', label: 'WEB SEARCH' },
-  { id: 'webfetch', label: 'WEB READER' },
+  { id: 'currenttime', label: 'CLOCK' },
   { id: 'screen', label: 'SCREEN VISION' },
 ];
 
@@ -41,10 +41,11 @@ export function mountHud(): void {
     $('q').textContent = store.question ? `› ${store.question}` : '';
     $('a').textContent = store.answer;
 
-    const active = store.activeTool.toLowerCase();
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const active = norm(store.activeTool);
     const items = [
       ...BUILTIN_TOOLS.map((t) => ({ label: t.label, on: active.includes(t.id) || (t.id === 'screen' && store.screenShared) })),
-      ...store.tools.map((n) => ({ label: `MCP // ${n.toUpperCase()}`, on: active.includes(n.toLowerCase()) })),
+      ...store.tools.map((n) => ({ label: `MCP // ${n.toUpperCase()}`, on: active.includes(norm(n)) })),
     ];
     $('tools').innerHTML = items.map((i) => `<li class="${i.on ? 'on' : ''}">${i.label}</li>`).join('');
 
