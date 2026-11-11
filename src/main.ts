@@ -11,7 +11,7 @@ const demo = params.get('demo');
 
 if (demo) {
   const state = (['idle', 'listening', 'thinking', 'speaking'].includes(demo) ? demo : 'idle') as JState;
-  set({ state, online: true, tools: ['calendar', 'gmail'], elevenlabs: true });
+  set({ state, online: true, provider: 'gemini', tools: ['calendar', 'gmail'], elevenlabs: false });
   if (state === 'speaking') {
     // Fake an audio envelope so the ring pulses.
     setInterval(() => { (window as any).__level = 0.35 + 0.35 * Math.abs(Math.sin(Date.now() / 140)); }, 30);

@@ -2,14 +2,15 @@
 
 A personal voice assistant that runs in your browser: a dry British butler with a glowing HUD, wake word, calendar, web search and screen vision.
 
-- **Brain:** Claude via the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), plus any MCP servers in your `~/.claude.json`
-- **Voice out:** ElevenLabs (falls back to your browser's built-in voices)
+- **Brain:** Google Gemini by default (works with a **free** `GEMINI_API_KEY`), or Claude via the Claude Agent SDK as an optional provider. Tools come from any MCP servers you configure
+- **Voice out:** your browser's built-in voices (free), or ElevenLabs if you add a key
 - **Voice in:** Web Speech API (use **Chrome or Edge**; Firefox has no speech recognition)
 - **Bridge:** a small Node server on `127.0.0.1` that keeps your keys off the web page
 
 ```
-browser (Vite, :5173) --WebSocket/HTTP--> bridge (127.0.0.1:8787) --> Claude Agent SDK --> MCP tools
-                                                         `--> ElevenLabs (key stays server-side)
+browser (Vite, :5173) --WebSocket/HTTP--> bridge (127.0.0.1:8787) --> LLM provider (Gemini | Claude)
+                                                         |--> MCP servers (bridge-side MCP client)
+                                                         `--> ElevenLabs (optional; keys stay server-side)
 ```
 
 ## 1. Install
@@ -18,7 +19,7 @@ Requires Node 20 or newer.
 
 ```bash
 npm install
-cp .env.example .env      # then fill it in
+cp .env.example .env      # then add GEMINI_API_KEY (see "Free setup with Gemini")
 npm run dev               # starts the bridge and the web app
 ```
 
@@ -28,11 +29,14 @@ Open <http://127.0.0.1:5173> in Chrome or Edge and allow the microphone.
 
 | Variable | Purpose |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Lets the Agent SDK call Claude |
+| `LLM_PROVIDER` | `gemini` (default) or `anthropic` |
+| `LLM_MODEL` | Optional model override. Default for Gemini: `gemini-3.8-flash` |
+| `GEMINI_API_KEY` | Required for `gemini`. Free key from <https://aistudio.google.com/apikey> |
+| `GEMINI_SEARCH_MODEL` | Optional. Model for the grounded `web_search` call. Default `gemini-2.5-flash` |
+| `ANTHROPIC_API_KEY` | Required only for `anthropic` |
 | `ELEVENLABS_API_KEY` | Optional. Without it Jarvis uses a browser voice |
 | `JARVIS_VOICE_ID` | Optional. Which ElevenLabs voice to use |
 | `BRIDGE_PORT` | Optional. Default `8787` |
-| `JARVIS_MODEL` | Optional. Override the Claude model |
 
 The bridge reads `.env` once at boot, so **restart it after editing**.
 
@@ -40,17 +44,47 @@ The bridge reads `.env` once at boot, so **restart it after editing**.
 
 | Say | What happens |
 | --- | --- |
-| "Hey Jarvis" (then your request) | Wake word. The ring switches to *listening*, then your words go to Claude |
+| "Hey Jarvis" (then your request) | Wake word. The ring switches to *listening*, then your words go to the model |
 | Hold **Space**, speak, release | Push-to-talk, no wake word needed |
 | "Good morning, Jarvis" | Morning briefing: weather, today's calendar and any tasks. Calendar events also open as a HUD panel |
-| "Search for AI news" | Web search, summarised in a couple of sentences |
-| "What's on my screen?" | Takes a frame of the window you shared and describes it. Press **S** once first to choose what to share |
+| "Search for AI news" | Google-grounded web search (`web_search`), summarised in a couple of sentences |
+| "What's on my screen?" | Sends a frame of the window you shared to the model's vision and describes it. Press **S** once first to choose what to share |
 | "What's happening in the world?" | Searches the headlines and gives you the top three |
 | Anything else | A helpful answer delivered with sarcastic-butler wit |
 
 Keys: **Space** push-to-talk, **V** cycle browser voices, **S** share/stop sharing screen, **Esc** interrupt.
 
 The ring shows the state: slow breathing (idle), rippling (listening), a sweeping arc with orbiting beads (thinking), and radial pulses that follow the audio (speaking).
+
+## 2b. Free setup with Gemini
+
+1. Go to <https://aistudio.google.com/apikey>, sign in with a Google account and create an API key. No credit card is needed.
+2. Put it in `.env`:
+
+   ```
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=your-key
+   ```
+3. `npm install && npm run dev`, open <http://127.0.0.1:5173>. The browser voice is the free TTS default, so no other key is needed.
+
+What to know about the free tier (checked against ai.google.dev in October 2026, so re-check before relying on it):
+
+- **Limits.** Free keys are limited per project in requests per minute, tokens per minute and requests per day, and the limits differ by model. See your own limits at <https://aistudio.google.com/rate-limit>. When you hit one, the API answers HTTP 429. Jarvis retries up to three times with backoff, then says "I'm being rate-limited, sir. Give me a moment."
+- **Your data.** On the free tier, Google states that your prompts and responses may be used to improve its products. The paid tier says otherwise. Do not point a free key at anything confidential: calendar and email results travel to Google with every question.
+- **Web search.** Google Search grounding is not available on the free tier for Gemini 3.x models, but it is for `gemini-2.5-flash` (a daily request cap applies). So `web_search` runs as a separate grounded call to `GEMINI_SEARCH_MODEL` (default `gemini-2.5-flash`) while chat uses `gemini-3.8-flash`. If Google retires that model, set `GEMINI_SEARCH_MODEL` to another one.
+- **Model names change.** If `gemini-3.8-flash` stops working, set `LLM_MODEL` to a current Flash model from <https://ai.google.dev/gemini-api/docs/models>.
+
+## 2c. Switching providers
+
+| Want | Set in `.env` |
+| --- | --- |
+| Gemini (default, free) | `LLM_PROVIDER=gemini`, `GEMINI_API_KEY=...` |
+| Claude | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=...` (optionally `LLM_MODEL=...`) |
+| No key at all (canned replies, for UI work) | `LLM_PROVIDER=mock` |
+
+Restart the bridge after changing it. If the chosen provider's key is missing, the bridge refuses to start and tells you which variable to set. The header link line and the bridge log show which provider is active.
+
+Differences: with Gemini, the bridge itself connects to your MCP servers and runs the tool loop (at most 8 model-tool rounds per question). With Claude, the Claude Agent SDK runs its own tool loop with its own web search, and the bridge hands it your MCP servers. The Claude path needs the optional `@anthropic-ai/claude-agent-sdk` package, which `npm install` pulls in by default.
 
 ## 3. Choosing a voice
 
@@ -72,16 +106,16 @@ The page header shows `VOICE: ELEVENLABS` or `VOICE: BROWSER` so you can tell wh
 
 ## 4. Google Calendar and Gmail
 
-Jarvis uses whichever MCP servers are in `~/.claude.json`. To add Calendar and Gmail:
+Jarvis uses the MCP servers listed in `./jarvis.mcp.json` (gitignored). If that file has none, it falls back to `mcpServers` in `~/.claude.json`. Same format as Claude's config: `{ "mcpServers": { "name": { "command": "npx", "args": ["..."] } } }`. Local (stdio) servers and remote servers that take a static header token are supported; remote servers that need an interactive OAuth login are not. To add Calendar and Gmail:
 
 ```bash
 export GOOGLE_OAUTH_CREDENTIALS=/path/to/gcp-oauth.keys.json   # your Desktop-app OAuth client file
 npm run mcp:add                 # dry run, explains each step
-npm run mcp:add -- --write      # merge into ~/.claude.json (a backup is kept)
+npm run mcp:add -- --write      # merge into ./jarvis.mcp.json
 npx -y @gongrzhe/server-gmail-autoauth-mcp auth                # one-time browser consent, run locally
 ```
 
-Calendar asks you to consent the first time it is used. The script reads the credentials *path* from the environment and never writes secrets itself. Restart the bridge afterwards.
+Calendar asks you to consent the first time it is used. The script reads the credentials *path* from the environment and never writes secrets itself. Restart the bridge afterwards. The bridge logs only server names, never their config.
 
 ## 5. Make it start itself
 
@@ -156,13 +190,17 @@ If `npm` is installed through nvm, use its absolute path in `ExecStart`.
 
 ## 6. Troubleshooting
 
-**Windows: "spawn ... ENOENT" or the agent never answers.** Tools such as `npx` and the Claude CLI are `.cmd` shims on Windows, and Node can only start those through a shell. The bridge already spawns with `shell:true` on Windows. If you start your own commands, use `cmd /c npx ...` (which is what `npm run mcp:add` writes).
+**Windows: "spawn ... ENOENT" or an MCP server never connects.** Tools such as `npx` and the Claude CLI are `.cmd` shims on Windows, and Node can only start those through a shell. The Claude provider spawns the CLI with `shell:true` on Windows. For MCP servers use `cmd /c npx ...` in `jarvis.mcp.json` (which is what `npm run mcp:add` writes).
+
+**"JARVIS cannot start: ... GEMINI_API_KEY is not set".** Add the key to `.env` (or `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`) and run `npm run dev` again.
+
+**Jarvis says "I can't seem to authenticate with my brain".** The API key was rejected. Re-copy it from AI Studio, with no quotes or spaces, and restart the bridge.
 
 **The mic does nothing.** Use Chrome or Edge on `http://127.0.0.1:5173` or `http://localhost:5173`, click the padlock and allow the microphone, then reload. Also check the OS-level mic permission for the browser, and that no other tab or app has the mic. A "Microphone blocked" notice on screen means the browser said no.
 
 **Wake word is flaky.** Browser speech recognition needs an internet connection and mishears sometimes. Push-to-talk (Space) always works. While Jarvis is speaking he stops listening, so you cannot talk over him; press Esc or Space to interrupt.
 
-**I edited `.env` or `~/.claude.json` and nothing changed.** The bridge reads both only at boot. Stop it (Ctrl+C) and run `npm run dev` again.
+**I edited `.env` or the MCP config and nothing changed.** The bridge reads `.env`, `jarvis.mcp.json` and `~/.claude.json` only at boot. Stop it (Ctrl+C) and run `npm run dev` again.
 
 **Voice says BROWSER but I set ElevenLabs keys.** Both `ELEVENLABS_API_KEY` and `JARVIS_VOICE_ID` must be set, and the bridge restarted. Check `http://127.0.0.1:8787/health`. If ElevenLabs errors mid-session, Jarvis falls back to the browser voice for that sentence.
 
@@ -173,10 +211,10 @@ If `npm` is installed through nvm, use its absolute path in `ExecStart`.
 ## Development
 
 ```bash
-npm test             # unit tests (MCP config, TTS fallback, HUD tags, wake word, ...)
+npm test             # unit tests, all keyless (mock provider). A live Gemini smoke test runs only if GEMINI_API_KEY is set
 npm run typecheck
 npm run smoke        # boots the bridge and hits /health
 npm run screenshots  # headless HUD screenshots into docs/screenshots/
 ```
 
-Security notes: the bridge refuses non-local `Host`/`Origin` headers, never logs `~/.claude.json`, and gives the agent only web search, web fetch and your MCP tools (no shell, no file access).
+Security notes: the bridge listens on `127.0.0.1` only, refuses non-local `Host`/`Origin` headers, keeps `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` and `ELEVENLABS_API_KEY` server-side (the browser never sees them), never logs MCP config contents, and gives the model only web search, the clock and your MCP tools (no shell, no file access).

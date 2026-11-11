@@ -1,8 +1,7 @@
 // Documents - and, with --write, performs - adding Google Calendar and Gmail MCP servers
-// to ~/.claude.json. Credentials are read from the environment; nothing is hardcoded and
-// the contents of ~/.claude.json are never printed.
+// to ./jarvis.mcp.json (gitignored; the bridge reads it before falling back to ~/.claude.json).
+// Credentials are read from the environment; nothing is hardcoded and file contents are never printed.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,13 +16,14 @@ JARVIS - connect Google Calendar and Gmail
      $env:GOOGLE_OAUTH_CREDENTIALS="C:\\path\\to\\gcp-oauth.keys.json"   (PowerShell)
 3. Preview what will change, then write it:
      npm run mcp:add               # dry run, changes nothing
-     npm run mcp:add -- --write    # merges into ~/.claude.json (backup kept alongside)
+     npm run mcp:add -- --write    # merges into ./jarvis.mcp.json (gitignored)
      npm run mcp:add -- --write --force   # also replace existing "google-calendar"/"gmail" entries
 4. Complete the OAuth consent in your browser, once, on your own machine:
      npx -y @gongrzhe/server-gmail-autoauth-mcp auth
    Calendar authenticates the first time it is used (ask Jarvis for your calendar and follow
    the browser prompt). OAuth cannot be completed in a cloud sandbox.
-5. Restart the bridge so it re-reads ~/.claude.json.
+5. Restart the bridge so it re-reads jarvis.mcp.json. (Servers already in ~/.claude.json are used
+   only when jarvis.mcp.json has none.)
 
 Servers used: @cocal/google-calendar-mcp and @gongrzhe/server-gmail-autoauth-mcp.
 `;
@@ -63,11 +63,11 @@ function main() {
     console.error('GOOGLE_OAUTH_CREDENTIALS is not set, so there is nothing to add yet. Follow steps 1-2 above.');
     process.exit(args.has('--write') ? 1 : 0);
   }
-  const file = path.join(os.homedir(), '.claude.json');
+  const file = fileURLToPath(new URL('../jarvis.mcp.json', import.meta.url));
   let config = {};
   if (fs.existsSync(file)) {
     try { config = JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch { console.error(`${file} is not valid JSON; refusing to touch it.`); process.exit(1); }
+    catch { console.error('jarvis.mcp.json is not valid JSON; refusing to touch it.'); process.exit(1); }
   }
   const { servers, added, skipped } = mergeServers(config.mcpServers, entries, args.has('--force'));
   console.log(`Would add: ${added.join(', ') || 'nothing'}${skipped.length ? `   Already present (kept): ${skipped.join(', ')}` : ''}`);
@@ -75,7 +75,7 @@ function main() {
   if (!added.length) return;
   if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.jarvis-backup`);
   fs.writeFileSync(file, JSON.stringify({ ...config, mcpServers: servers }, null, 2) + '\n', { mode: 0o600 });
-  console.log(`Updated ${file} (backup: ${file}.jarvis-backup). Now run step 4, then restart the bridge.`);
+  console.log(`Updated jarvis.mcp.json (previous copy: ${file}.jarvis-backup). Now run step 4, then restart the bridge.`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();

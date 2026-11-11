@@ -88,7 +88,7 @@ export class Controller {
   private onServer(m: ServerMsg): void {
     switch (m.type) {
       case 'hello':
-        set({ tools: m.tools, elevenlabs: this.tts.elevenlabs || m.elevenlabs });
+        set({ tools: m.tools, provider: m.provider ?? '', elevenlabs: this.tts.elevenlabs || m.elevenlabs });
         break;
       case 'text':
         set({ answer: store.answer + m.delta });

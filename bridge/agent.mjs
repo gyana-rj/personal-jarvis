@@ -1,6 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { SYSTEM_PROMPT } from './prompt.mjs';
-import { createHudFilter } from './hud-tags.mjs';
 import { spawnClaudeCodeProcess } from './spawn.mjs';
 
 const MAX_IMAGE_CHARS = 10_000_000;
@@ -34,32 +32,28 @@ export function createAgent({ mcpServers, model }) {
     spawnClaudeCodeProcess,
   };
 
-  /** Runs one turn. Returns the session id so the next turn can resume it. */
-  async function run({ text, image, sessionId, signal, onText, onPanel, onTool }) {
-    const filter = createHudFilter({ onText, onPanel });
+  /**
+   * Runs one turn on the Claude Agent SDK. `onText` receives raw deltas (HUD tags are filtered by
+   * the caller). The SDK is loaded lazily so Gemini-only installs never need it.
+   */
+  async function run({ text, image, signal, onText, onTool }) {
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
     const abortController = new AbortController();
     signal?.addEventListener('abort', () => abortController.abort(), { once: true });
-    let nextSession = sessionId;
     const q = query({
       prompt: buildPrompt(text, image),
-      options: { ...options, resume: sessionId, abortController },
+      options: { ...options, abortController },
     });
-    try {
-      for await (const msg of q) {
-        if (msg.session_id) nextSession = msg.session_id;
-        if (msg.type === 'stream_event') {
-          const e = msg.event;
-          if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') filter.push(e.delta.text);
-        } else if (msg.type === 'assistant') {
-          for (const b of msg.message.content ?? []) if (b.type === 'tool_use') onTool?.(b.name);
-        } else if (msg.type === 'result' && msg.is_error) {
-          throw new Error('agent_error');
-        }
+    for await (const msg of q) {
+      if (msg.type === 'stream_event') {
+        const e = msg.event;
+        if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') onText(e.delta.text);
+      } else if (msg.type === 'assistant') {
+        for (const b of msg.message.content ?? []) if (b.type === 'tool_use') onTool?.(b.name);
+      } else if (msg.type === 'result' && msg.is_error) {
+        throw new Error('agent_error');
       }
-    } finally {
-      filter.end();
     }
-    return nextSession;
   }
 
   return { run, serverNames };

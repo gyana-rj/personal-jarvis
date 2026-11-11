@@ -21,6 +21,7 @@ export interface Store {
   activeTool: string;
   elevenlabs: boolean;
   online: boolean;
+  provider: string;
   screenShared: boolean;
   notice: string;
   calendar: CalendarPanelData | null;
@@ -35,6 +36,7 @@ export const store: Store = {
   activeTool: '',
   elevenlabs: false,
   online: false,
+  provider: '',
   screenShared: false,
   notice: '',
   calendar: null,

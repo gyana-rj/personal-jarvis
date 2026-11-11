@@ -7,8 +7,8 @@ const freePort = () => new Promise((resolve) => {
 });
 
 const port = await freePort();
-const child = spawn(process.execPath, [fileURLToPath(new URL('../bridge/server.mjs', import.meta.url))], {
-  env: { ...process.env, BRIDGE_PORT: String(port), ELEVENLABS_API_KEY: '', JARVIS_VOICE_ID: '', HOME: process.env.SMOKE_HOME ?? process.env.HOME },
+const child = spawn(process.execPath, ['--import', 'tsx', fileURLToPath(new URL('../bridge/server.mjs', import.meta.url))], {
+  env: { ...process.env, LLM_PROVIDER: 'mock', BRIDGE_PORT: String(port), ELEVENLABS_API_KEY: '', JARVIS_VOICE_ID: '', HOME: process.env.SMOKE_HOME ?? process.env.HOME },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 
