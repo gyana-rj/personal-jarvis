@@ -15,7 +15,7 @@ export function createTts({ apiKey, voiceId, fetchImpl = fetch } = {}) {
       const res = await fetchImpl(`${API}/${encodeURIComponent(voiceId)}`, {
         method: 'POST',
         headers: { 'xi-api-key': apiKey, 'content-type': 'application/json', accept: 'audio/mpeg' },
-        body: JSON.stringify({ text: text.slice(0, 2500), model_id: 'eleven_turbo_v2_5' }),
+        body: JSON.stringify({ text: text.slice(0, 2500), model_id: 'eleven_flash_v2_5' }),
       });
       if (!res.ok) return { ok: false, status: 502, error: `upstream_${res.status}`, fallback: 'browser' };
       return { ok: true, status: 200, contentType: 'audio/mpeg', audio: Buffer.from(await res.arrayBuffer()) };

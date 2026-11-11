@@ -93,7 +93,7 @@ describe('web_search', () => {
     const out = JSON.parse(await tool.execute({ query: 'weather london' }));
     expect(out).toEqual({ summary: 'Rain tomorrow. Bring a coat.', sources: [{ title: 'A', url: 'https://a.example' }, { title: 'B', url: 'https://b.example' }] });
     const req = generateContent.mock.calls[0][0];
-    expect(req.model).toBe('gemini-2.5-flash'); // free-tier grounding model, separate from the chat model
+    expect(req.model).toBe('gemini-2.5-flash-lite'); // free-tier grounding model, separate from the chat model
     expect(req.config.tools).toEqual([{ googleSearch: {} }]);
   });
 });
