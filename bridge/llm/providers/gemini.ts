@@ -4,14 +4,17 @@ import { toFunctionDeclaration } from '../schema';
 import { withRateLimitRetry, type RetryOptions } from '../retry';
 import type { Chunk, ImageData, LLMProvider, Message, Tool } from '../types';
 
-/** Current stable Flash model per https://ai.google.dev/gemini-api/docs/models (free tier). */
+/** Current stable Flash model per https://aistudio.google.com/docs/models (free tier; checked 2026-11-11). */
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 /**
  * Model used for the separate Google-Search-grounded call behind `web_search`.
- * Grounding is free on gemini-2.5-flash (500 requests/day) but paid-only on Gemini 3.x,
- * so the default keeps a free key fully working.
+ * On the free tier, grounding is only offered on the 2.5 Flash family (500 requests/day, shared);
+ * it is paid-only on Gemini 3.x. gemini-2.5-flash is retired on 2026-12-01 (requests then route to
+ * gemini-3.5-flash-lite, which has no free grounding), so the default is 2.5 Flash-Lite, which has
+ * no shutdown date. Google limits 2.5 access to projects that have used it before, so a brand-new
+ * key may be refused; web_search then reports an error and Jarvis says search is unavailable.
  */
-export const DEFAULT_SEARCH_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_SEARCH_MODEL = 'gemini-2.5-flash-lite';
 
 const SEARCH_INSTRUCTION =
   'Answer the question factually and concisely from current web results, in at most five sentences. Plain text only, no markdown.';

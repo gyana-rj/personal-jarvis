@@ -32,7 +32,7 @@ Open <http://127.0.0.1:5173> in Chrome or Edge and allow the microphone.
 | `LLM_PROVIDER` | `gemini` (default) or `anthropic` |
 | `LLM_MODEL` | Optional model override. Default for Gemini: `gemini-3.8-flash` |
 | `GEMINI_API_KEY` | Required for `gemini`. Free key from <https://aistudio.google.com/apikey> |
-| `GEMINI_SEARCH_MODEL` | Optional. Model for the grounded `web_search` call. Default `gemini-2.5-flash` |
+| `GEMINI_SEARCH_MODEL` | Optional. Model for the grounded `web_search` call. Default `gemini-2.5-flash-lite` |
 | `ANTHROPIC_API_KEY` | Required only for `anthropic` |
 | `ELEVENLABS_API_KEY` | Optional. Without it Jarvis uses a browser voice |
 | `JARVIS_VOICE_ID` | Optional. Which ElevenLabs voice to use |
@@ -67,12 +67,20 @@ The ring shows the state: slow breathing (idle), rippling (listening), a sweepin
    ```
 3. `npm install && npm run dev`, open <http://127.0.0.1:5173>. The browser voice is the free TTS default, so no other key is needed.
 
-What to know about the free tier (checked against ai.google.dev in October 2026, so re-check before relying on it):
+What to know about the free tier (checked against Google's Gemini API docs at <https://aistudio.google.com/docs> on 11 November 2026; re-check before relying on it):
 
-- **Limits.** Free keys are limited per project in requests per minute, tokens per minute and requests per day, and the limits differ by model. See your own limits at <https://aistudio.google.com/rate-limit>. When you hit one, the API answers HTTP 429. Jarvis retries up to three times with backoff, then says "I'm being rate-limited, sir. Give me a moment."
+- **Rate limits.** Google no longer publishes per-model free-tier numbers in its docs. Your actual limits are shown only for your own project at <https://aistudio.google.com/rate-limit>. What the docs do state:
+  - Limits are measured in requests per minute (RPM), input tokens per minute (TPM) and requests per day (RPD), and exceeding any one triggers an error.
+  - They apply per project, not per API key, and vary by model. Daily quotas reset at midnight Pacific time.
+  - Grounded search on the free tier is capped at 500 requests per day, shared across 2.5 Flash and 2.5 Flash-Lite.
+  - Over the limit, the API answers HTTP 429 `RESOURCE_EXHAUSTED`.
+- **How Jarvis handles a 429.** It retries three times, waiting 1, 2 and 4 seconds (7 seconds in total), then says "I'm being rate-limited, sir. Give me a moment." That rides out a brief burst. It will not outlast a full per-minute window, and nothing short of waiting until midnight Pacific fixes a spent daily quota. The wait is kept short on purpose so a voice reply never hangs.
 - **Your data.** On the free tier, Google states that your prompts and responses may be used to improve its products. The paid tier says otherwise. Do not point a free key at anything confidential: calendar and email results travel to Google with every question.
-- **Web search.** Google Search grounding is not available on the free tier for Gemini 3.x models, but it is for `gemini-2.5-flash` (a daily request cap applies). So `web_search` runs as a separate grounded call to `GEMINI_SEARCH_MODEL` (default `gemini-2.5-flash`) while chat uses `gemini-3.8-flash`. If Google retires that model, set `GEMINI_SEARCH_MODEL` to another one.
-- **Model names change.** If `gemini-3.8-flash` stops working, set `LLM_MODEL` to a current Flash model from <https://ai.google.dev/gemini-api/docs/models>.
+- **Web search.** Free-tier Google Search grounding only exists on the 2.5 Flash family; it is paid-only on every Gemini 3.x and 4 model. So `web_search` runs as a separate grounded call to `GEMINI_SEARCH_MODEL` (default `gemini-2.5-flash-lite`) while chat uses `gemini-3.8-flash`. Two caveats:
+  - `gemini-2.5-flash` is retired on 1 December 2026; requests then route to `gemini-3.5-flash-lite`, which has no free grounding. `gemini-2.5-flash-lite` has no shutdown date.
+  - Google limits the 2.5 models to projects that have used them before. A brand-new key may be refused, in which case Jarvis tells you search is unavailable. The fix is a paid-tier key (5,000 free grounded searches a month on Gemini 3 and newer), with `GEMINI_SEARCH_MODEL=gemini-3.8-flash`.
+- **Model names change.** If `gemini-3.8-flash` stops working, set `LLM_MODEL` to a current Flash model from <https://aistudio.google.com/docs/models>, and check <https://aistudio.google.com/docs/deprecations>.
+- **API generation.** Jarvis calls Gemini through the `generateContent` API. Google now calls it "legacy" and recommends the newer Interactions API for new projects, but says `generateContent` "remains supported", and its deprecations page lists no shutdown date for it (checked 11 November 2026). If Google announces one, the change is confined to `bridge/llm/providers/gemini.ts`.
 
 ## 2c. Switching providers
 
@@ -94,7 +102,7 @@ Differences: with Gemini, the bridge itself connects to your MCP servers and run
 | `V` key | Cycles the *browser* voices. Only matters in fallback mode; with ElevenLabs on it just tells you so |
 | Browser/OS voice settings | Which voices `V` can cycle through |
 
-Some ElevenLabs premade British voices to start with. These IDs are from memory, so confirm them in your own Voice Library (copy the ID from the voice's menu) before relying on them:
+Some ElevenLabs default voices to start with. George's ID is the one ElevenLabs uses in its own quickstart; Daniel's and Brian's match several third-party listings of ElevenLabs' default voices (checked November 2026) but were not checked against a live account. To see the voices your own key can use, call `GET https://api.elevenlabs.io/v1/voices` or copy the ID from the voice's menu in your Voice Library:
 
 | Voice | Character | ID |
 | --- | --- | --- |
